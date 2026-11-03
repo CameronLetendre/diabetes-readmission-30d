@@ -39,3 +39,5 @@ reports/*.aux
 reports/*.log
 reports/*.out
 reports/*.synctex.gz
+reports/figures/
+reports/figures/readmitted_split.png
