@@ -23,11 +23,22 @@ Used to look up what a column means and descriptions
 """
 def fetch_raw(force=False):
     if RAW_CSV.exists() and not force:
-        return pd.read_csv(RAW_CSV)
+        # '?' is missing; the lab-result label 'None' means no test was taken.
+        df = pd.read_csv(RAW_CSV, keep_default_na=False, na_values=["?", ""],
+                         low_memory=False)
+        if {"encounter_id", "patient_nbr"}.issubset(df.columns):
+            for column in ["max_glu_serum", "A1Cresult"]:
+                df[column] = df[column].fillna("None")
+            return df
+        print("Cached data has no patient IDs. Downloading the complete dataset.")
 
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     ds = fetch_ucirepo(id=296)
     df = pd.concat([ds.data.ids, ds.data.features, ds.data.targets], axis=1)
+    # ucimlrepo parses the literal lab category 'None' as NaN; restore it.
+    for column in ["max_glu_serum", "A1Cresult"]:
+        df[column] = df[column].fillna("None")
+    df = df.replace("?", float("nan"))
     df.to_csv(RAW_CSV, index=False)
     ds.variables.to_csv(VARS_CSV, index=False)
     return df
