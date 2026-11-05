@@ -26,6 +26,9 @@ venv/
 env/
 .python-version
 
+# --- Local tests ---
+/tests/
+
 # --- Tooling / editors ---
 .vscode/
 .idea/
