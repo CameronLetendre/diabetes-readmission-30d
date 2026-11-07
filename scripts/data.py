@@ -2,7 +2,7 @@ from pathlib import Path
 import pandas as pd
 from ucimlrepo import fetch_ucirepo
 
-RAW_DIR = Path(__file__).resolve().parent / "raw"
+RAW_DIR = Path(__file__).resolve().parent.parent / "data" / "raw"
 RAW_CSV = RAW_DIR / "diabetic_data.csv"
 VARS_CSV = RAW_DIR / "variables.csv"
 
