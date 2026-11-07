@@ -1,11 +1,14 @@
 """This file prepares our hospital records for models by:
 
-1. Removing stays that ended in death or hospice care.
-2. Removing weight because almost all its values are missing.
-3. abeling missing information clearly, while keeping “test not performed” as a separate value.
-4, Grouping the three diagnosis codes into nine clinical categories plus Missing, as in Strack et al. (2014)
-5. Marking whether each stay was followed by a readmission in under 30 days.
-6. Keeping patient IDs separate so we can later keep the same patient out of both training and testing.
+1. Marking whether each stay was followed by a readmission in under 30 days.
+2. Removing stays that ended in death or hospice care.
+3. Removing the few stays whose gender is recorded as Unknown/Invalid.
+4. Removing weight because almost all its values are missing.
+5. Grouping the three ID code columns by clinical meaning.
+6. Labeling missing information clearly, while keeping "test not performed" as a separate value.
+7. Making age a number, flagging lab tests as ordered or not, and simplifying payer and specialty.
+8. Grouping the three diagnosis codes into nine clinical categories plus Missing, as in Strack et al. (2014).
+9. Keeping patient IDs separate so we can later keep the same patient out of both training and testing.
 
 Run from the project root: python -m data.preprocess.
 
@@ -13,11 +16,9 @@ Run from the project root: python -m data.preprocess.
 
 from pathlib import Path
 import re
-
 import pandas as pd
-
-from data.data import fetch_raw
-
+from scripts.data import fetch_raw
+from scripts.id_groups import apply_id_groups
 
 PROCESSED_DIR = Path(__file__).resolve().parent / "processed"
 REPORT_DIR = Path(__file__).resolve().parents[1] / "reports" / "figures"
@@ -28,6 +29,7 @@ NUMERIC_COLUMNS = [
     "num_medications", "number_outpatient", "number_emergency",
     "number_inpatient", "number_diagnoses",
 ]
+
 DIAGNOSIS_COLUMNS = ["diag_1", "diag_2", "diag_3"]
 
 # Source: IDS_mapping.csv in the official UCI dataset download:
@@ -39,6 +41,18 @@ MISSING_ID_CODES = {
     "admission_source_id": [9, 15, 17, 20, 21],
     "discharge_disposition_id": [18, 25, 26],
 }
+CONSTANT_DRUGS = [
+    "examide", "citoglipton", "acetohexamide", "tolbutamide", "troglitazone",
+    "glipizide-metformin", "glimepiride-pioglitazone",
+    "metformin-rosiglitazone", "metformin-pioglitazone",
+]
+DRUG_COLUMNS = [
+    "metformin", "repaglinide", "nateglinide", "chlorpropamide", "glimepiride",
+    "glipizide", "glyburide", "pioglitazone", "rosiglitazone", "acarbose",
+    "miglitol", "tolazamide", "insulin", "glyburide-metformin",
+]
+AGE_ORDER = ["[0-10)", "[10-20)", "[20-30)", "[30-40)", "[40-50)",
+             "[50-60)", "[60-70)", "[70-80)", "[80-90)", "[90-100)"]
 
 
 def group_diagnosis(code):
@@ -103,6 +117,7 @@ def preprocess_data(raw):
 
     # 1. Define the target before exclusions so every stage reports its balance.
     df["readmit_30"] = df["readmitted"].eq("<30").astype(int)
+
     for column in MISSING_ID_CODES:
         df[column] = pd.to_numeric(df[column], errors="raise")
         if (df[column].dropna() % 1 != 0).any():
@@ -128,20 +143,29 @@ def preprocess_data(raw):
     if df.empty:
         raise ValueError("No eligible encounters remain after exclusions.")
 
-    # 3. Drop the very sparse weight column. No other feature is dropped here.
+    # 3. Exclude the few encounters whose gender is Unknown/Invalid: a data entry error.
+    before = len(df)
+    df = df.loc[df["gender"] != "Unknown/Invalid"].copy()
+    counts.append({
+        "stage": "exclude_invalid_gender", "encounters": len(df),
+        "patients": df["patient_nbr"].nunique(),
+        "removed_encounters": before - len(df),
+        "readmitted_30": int(df["readmit_30"].sum()),
+    })
+
+    # 4. Drop the very sparse weight column. No other feature is dropped here.
     df = df.drop(columns="weight")
 
-    # 4. Distinguish true missing categories from a test that was not performed.
+    # 5. Group the ID codes by meaning. Admission type, discharge disposition, and
+    # admission source are stored as integers, but they are labels. Several codes
+    # mean NULL or Not Mapped, and most are rare, so each code is mapped to a larger
+    # group that shares a clinical meaning. The raw integer columns are dropped.
+    df = apply_id_groups(df)
+
+    # 6. Distinguish true missing categories from a test that was not performed.
     # 'Not measured' also survives CSV reading, unlike pandas' NA token 'None'.
     for column in ["max_glu_serum", "A1Cresult"]:
         df[column] = df[column].fillna("Not measured").replace("None", "Not measured")
-
-    # Category IDs describe groups, not quantities. Prefix the codes so they
-    # remain text categories even when features.csv is read back with pandas.
-    for column, missing_codes in MISSING_ID_CODES.items():
-        codes = df[column]
-        labels = column.removesuffix("_id") + "_" + codes.astype("Int64").astype("string")
-        df[column] = labels.mask(codes.isin(missing_codes), "Missing").fillna("Missing")
 
     excluded_columns = ID_COLUMNS + NUMERIC_COLUMNS + DIAGNOSIS_COLUMNS + [
         "readmitted", "readmit_30"
@@ -151,7 +175,28 @@ def preprocess_data(raw):
     for column in categorical_columns:
         df[column] = df[column].fillna("Missing")
 
-    # 5. Replace high-cardinality diagnosis codes with the clinical groups.
+    # 7. Make age a number. The buckets have a real order, so map them 0 through 9.
+    df["age"] = df["age"].map({label: i for i, label in enumerate(AGE_ORDER)})
+    if df["age"].isna().any():
+        raise ValueError("Unexpected age bucket in the raw data.")
+
+    # 8. Flag lab tests as tested or not. A blank result means the test was never
+    # ordered, and Strack et al. (2014) found that ordering the test matters.
+    df["a1c_tested"] = df["A1Cresult"].ne("Not measured").astype(int)
+    df["glucose_tested"] = df["max_glu_serum"].ne("Not measured").astype(int)
+    df["a1c_tested_and_changed"] = df["a1c_tested"] * df["change"].eq("Ch").astype(int)
+
+    # 9. Simplify payer and specialty. The 10 most common specialties cover 91.8% of
+    # rows; the rest fold into Other. Medicare and Medicaid flags let us check later
+    # whether the model works equally well across payers.
+    top = df["medical_specialty"].value_counts().index[:10]
+    df["medical_specialty"] = df["medical_specialty"].where(
+        df["medical_specialty"].isin(top), "Other")
+
+    df["medicare"] = df["payer_code"].eq("MC").astype(int)
+    df["medicaid"] = df["payer_code"].eq("MD").astype(int)
+
+    # 10. Replace high-cardinality diagnosis codes with the clinical groups.
     for column in DIAGNOSIS_COLUMNS:
         df[f"{column}_group"] = df[column].map(group_diagnosis)
     df = df.drop(columns=DIAGNOSIS_COLUMNS)
