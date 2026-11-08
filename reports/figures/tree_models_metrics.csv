@@ -1,0 +1,3 @@
+model,precision,recall,f1,roc_auc,pr_auc
+Random forest,0.197,0.486,0.28,0.669,0.218
+XGBoost,0.181,0.585,0.277,0.666,0.223
