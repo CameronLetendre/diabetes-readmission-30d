@@ -10,17 +10,21 @@
 8. Grouping the three diagnosis codes into nine clinical categories plus Missing, as in Strack et al. (2014).
 9. Keeping patient IDs separate so we can later keep the same patient out of both training and testing.
 
-Run from the project root: python -m data.preprocess.
+Run from the project root: python -m scripts.preprocess.
 
 """
 
 from pathlib import Path
 import re
+import sys
 import pandas as pd
+
+# Let "python scripts/preprocess.py" (or the IDE Run button) find the scripts package.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.data import fetch_raw
 from scripts.id_groups import apply_id_groups
 
-PROCESSED_DIR = Path(__file__).resolve().parent / "processed"
+PROCESSED_DIR = Path(__file__).resolve().parents[1] / "data" / "processed"
 REPORT_DIR = Path(__file__).resolve().parents[1] / "reports" / "figures"
 
 ID_COLUMNS = ["encounter_id", "patient_nbr"]
@@ -154,7 +158,7 @@ def preprocess_data(raw):
     })
 
     # 4. Drop the very sparse weight column. No other feature is dropped here.
-    df = df.drop(columns="weight")
+    df = df.drop(columns=["weight"] + CONSTANT_DRUGS)
 
     # 5. Group the ID codes by meaning. Admission type, discharge disposition, and
     # admission source are stored as integers, but they are labels. Several codes
