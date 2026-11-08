@@ -1,0 +1,3 @@
+split,encounters,patients,readmit_30_rate
+test,19867,13951,0.114
+train,79473,56036,0.114
