@@ -17,7 +17,7 @@ def patient_split(y, patient_ids, seed=SEED):
 # Run from the project root: python -m scripts.split
 if __name__ == "__main__":
     from scripts.data import fetch_raw
-    from data.preprocess import preprocess_data
+    from scripts.preprocess import preprocess_data
 
     df, _ = preprocess_data(fetch_raw())
     train_idx, test_idx = patient_split(df["readmit_30"], df["patient_nbr"])
