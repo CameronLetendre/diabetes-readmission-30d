@@ -60,9 +60,12 @@ Open each notebook in this order and run all its cells from top to bottom:
 3. `03_baseline_logreg.ipynb` — train and evaluate logistic regression.
 4. `04_tree_models.ipynb` — train and evaluate random forest and XGBoost.
 5. `05_comparison.ipynb` — compare the models and review the results.
+6. `06_imbalance_threshold.ipynb` — test resampling (including SMOTE) against
+   class weights and choose a decision threshold.
 
-Run notebooks 03 and 04 before 05 because the comparison loads the models they
-save. Notebook 04 may take a while because it tries several model settings.
+Run notebooks 03 and 04 before 05 and 06 because they load the models that 03
+and 04 save. Notebook 04 may take a while because it tries several model
+settings.
 
 Keep the `scripts/` folder with the notebooks: they use its shared code. Saved
 models go in `models/`, charts and result tables go in `reports/figures/`, and
